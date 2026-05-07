@@ -6,47 +6,22 @@ import asyncio
 API_BASE_URL = "http://192.168.100.32:8000/alarma/activar"
 
 async def main(page: ft.Page):
-    page.title = "FastAlert - Botón de Pánico"
+    page.title = "FastAlert"
     page.theme_mode = ft.ThemeMode.DARK
     page.padding = 20
     page.vertical_alignment = ft.MainAxisAlignment.CENTER
     page.horizontal_alignment = ft.CrossAxisAlignment.CENTER
 
-    # --- VARIABLE DE SESIÓN (Memoria) ---
     state = {"phone": None}
 
-    # Intentar recuperar el teléfono al iniciar
+    # Recuperar teléfono
     try:
-        val = page.client_storage.get("user_phone")
-        if val:
-            state["phone"] = val
-    except:
-        pass
+        if hasattr(page, "client_storage") and page.client_storage is not None:
+            val = page.client_storage.get("user_phone")
+            if val: state["phone"] = val
+    except: pass
 
-    # --- LÓGICA DE ALERTA ---
-    async def send_panic_alert():
-        phone = state["phone"]
-        if not phone:
-            page.snack_bar = ft.SnackBar(ft.Text("❌ Error: Teléfono no configurado"))
-            page.snack_bar.open = True
-            page.update()
-            return
-        
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.post(API_BASE_URL, json={"telefono": phone})
-                if response.status_code == 200:
-                    page.snack_bar = ft.SnackBar(ft.Text("✅ ALERTA ENVIADA EXITOSAMENTE"), bgcolor=ft.Colors.GREEN_700)
-                else:
-                    page.snack_bar = ft.SnackBar(ft.Text(f"❌ Error Servidor: {response.status_code}"), bgcolor=ft.Colors.RED_700)
-        except Exception:
-            page.snack_bar = ft.SnackBar(ft.Text("🚨 Error de conexión con el servidor"), bgcolor=ft.Colors.ORANGE_900)
-        
-        page.snack_bar.open = True
-        page.update()
-
-    # --- DIÁLOGOS Y COMPONENTES ---
-
+    # --- DIÁLOGOS ---
     async def handle_confirm(e):
         confirm_dialog.open = False
         page.update()
@@ -58,21 +33,51 @@ async def main(page: ft.Page):
 
     confirm_dialog = ft.AlertDialog(
         modal=True,
-        title=ft.Text("⚠️ CONFIRMAR EMERGENCIA"),
-        content=ft.Text("¿Estás seguro de que deseas activar la alerta vecinal?"),
+        title=ft.Text("⚠️ CONFIRMAR"),
+        content=ft.Text("¿Activar la alerta ahora?"),
         actions=[
             ft.TextButton("SÍ, ACTIVAR", on_click=handle_confirm, style=ft.ButtonStyle(color=ft.Colors.RED)),
-            ft.TextButton("NO, CANCELAR", on_click=close_dlg),
+            ft.TextButton("NO", on_click=close_dlg),
         ],
     )
-
-    # El diálogo debe estar en el overlay
     page.overlay.append(confirm_dialog)
 
     async def open_confirmation(e):
         confirm_dialog.open = True
         page.update()
 
+    # --- LÓGICA DE ALERTA ---
+    async def send_panic_alert():
+        phone = state["phone"]
+        
+        # Feedback visual
+        page.snack_bar = ft.SnackBar(ft.Text("🚀 Procesando alerta..."), bgcolor=ft.Colors.BLUE_GREY_800)
+        page.snack_bar.open = True
+        
+        panic_button.disabled = True
+        panic_button.opacity = 0.5
+        page.update()
+
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                response = await client.post(API_BASE_URL, json={"telefono": phone})
+                
+                if response.status_code == 200:
+                    msg, color = "✅ ALERTA ENVIADA CON ÉXITO", ft.Colors.GREEN_700
+                else:
+                    msg, color = f"❌ Error API: {response.status_code}", ft.Colors.RED_700
+        except Exception as e:
+            msg, color = f"🚨 Error de Red: {str(e)}", ft.Colors.RED_900
+        
+        # Mostramos el mensaje usando un método más directo
+        page.snack_bar = ft.SnackBar(ft.Text(msg), bgcolor=color, duration=4000)
+        page.snack_bar.open = True
+        
+        panic_button.disabled = False
+        panic_button.opacity = 1.0
+        page.update() # Forzar refresco de toda la página
+
+    # --- COMPONENTES ---
     panic_button = ft.Container(
         content=ft.Column(
             [
@@ -86,22 +91,22 @@ async def main(page: ft.Page):
         height=280,
         bgcolor=ft.Colors.RED_700,
         shape=ft.BoxShape.CIRCLE,
-        shadow=ft.BoxShadow(blur_radius=30, color=ft.Colors.RED_900),
         on_click=open_confirmation,
     )
 
-    # --- VISTA DE CONFIGURACIÓN ---
     phone_input = ft.TextField(
-        label="Número de Teléfono",
-        hint_text="Ej: 569XXXXXXXX",
-        width=300
+        label="Tu número de teléfono",
+        hint_text="569XXXXXXXX",
+        width=300,
+        keyboard_type=ft.KeyboardType.PHONE
     )
 
     async def save_config(e):
         if phone_input.value and len(phone_input.value) >= 9:
             state["phone"] = phone_input.value
             try:
-                page.client_storage.set("user_phone", phone_input.value)
+                if hasattr(page, "client_storage") and page.client_storage is not None:
+                    page.client_storage.set("user_phone", phone_input.value)
             except: pass
             await show_main_view()
         else:
@@ -117,14 +122,16 @@ async def main(page: ft.Page):
             ft.Divider(height=40, color=ft.Colors.TRANSPARENT),
             panic_button,
             ft.Divider(height=60, color=ft.Colors.TRANSPARENT),
-            ft.Text(f"Registrado como: {phone}", italic=True, opacity=0.5),
+            ft.Text(f"📞 {phone}", size=16, opacity=0.8),
             ft.TextButton("Cambiar número", on_click=reset_config),
         )
         page.update()
 
     async def reset_config(e):
         state["phone"] = None
-        try: page.client_storage.clear()
+        try:
+            if hasattr(page, "client_storage") and page.client_storage is not None:
+                page.client_storage.clear()
         except: pass
         page.controls.clear()
         page.add(onboarding_view)
@@ -133,18 +140,17 @@ async def main(page: ft.Page):
     onboarding_view = ft.Column(
         [
             ft.Icon(ft.Icons.SECURITY, size=100, color=ft.Colors.BLUE_400),
-            ft.Text("Bienvenido a FastAlert", size=24, weight="bold"),
+            ft.Text("Configuración", size=24, weight="bold"),
             phone_input,
-            ft.FilledButton("GUARDAR Y CONTINUAR", on_click=save_config, width=300),
+            ft.FilledButton("GUARDAR", on_click=save_config, width=300),
         ],
         horizontal_alignment=ft.CrossAxisAlignment.CENTER,
     )
 
-    # --- INICIO ---
     if state["phone"]:
         await show_main_view()
     else:
         page.add(onboarding_view)
 
 if __name__ == "__main__":
-    ft.app(target=main)
+    ft.app(main)
