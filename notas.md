@@ -1,0 +1,1 @@
+sqlite3 fastalert.db "INSERT INTO vecinos (nombre, telefono, activo) VALUES ('Gabriel Campillay', '56998283930', 1);" 
