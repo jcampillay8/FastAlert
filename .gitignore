@@ -1,0 +1,46 @@
+# --- Python & FastAPI ---
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+.env
+# Ignorar bases de datos locales para evitar sobrescribir datos de prueba en prod
+*.db
+*.sqlite3
+
+# --- Docker ---
+.dockerignore
+# A veces es útil ignorar logs de contenedores si se guardan localmente
+*.log
+
+# --- Archivos de Sistema / IDEs ---
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- Especifico de tu Proyecto (Multimedia y Temporales) ---
+# Ignoramos el contenido de las capturas pero mantenemos la carpeta si es necesaria
+static/capturas/*
+!static/capturas/.gitkeep
+
+# Ignorar archivos subidos por usuarios
+uploads/*
+!uploads/.gitkeep
+
+# --- Arduino / ESP32 ---
+# Archivos temporales de compilación y binarios
+arduino/build/
+arduino/bin/
+*.hex
+*.elf
+*.bin
+
+# --- Otros ---
+.python-version
+.pytest_cache/
+.coverage
+htmlcov/
