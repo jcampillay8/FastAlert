@@ -3,7 +3,7 @@ import httpx
 import asyncio
 
 # --- CONFIGURACIÓN ---
-API_BASE_URL = "http://192.168.100.32:8000/alarma/activar"
+API_URL = "http://192.168.100.32:8000/api/v1/alarma"
 
 async def main(page: ft.Page):
     page.title = "FastAlert"
@@ -22,6 +22,19 @@ async def main(page: ft.Page):
     except: pass
 
     # --- DIÁLOGOS ---
+    async def close_success_dlg(e):
+        success_dialog.open = False
+        page.update()
+
+    success_dialog = ft.AlertDialog(
+        title=ft.Text("✅ SISTEMA ACTIVADO"),
+        content=ft.Text("ALERTA ENVIADA CON ÉXITO\n\nEl vecindario y el sistema de cámaras han sido notificados.", text_align="center"),
+        actions=[
+            ft.TextButton("ENTENDIDO", on_click=close_success_dlg),
+        ],
+    )
+    page.overlay.append(success_dialog)
+
     async def handle_confirm(e):
         confirm_dialog.open = False
         page.update()
@@ -50,7 +63,6 @@ async def main(page: ft.Page):
     async def send_panic_alert():
         phone = state["phone"]
         
-        # Feedback visual
         page.snack_bar = ft.SnackBar(ft.Text("🚀 Procesando alerta..."), bgcolor=ft.Colors.BLUE_GREY_800)
         page.snack_bar.open = True
         
@@ -60,22 +72,49 @@ async def main(page: ft.Page):
 
         try:
             async with httpx.AsyncClient(timeout=15.0) as client:
-                response = await client.post(API_BASE_URL, json={"telefono": phone})
+                response = await client.post(f"{API_URL}/activar", json={"telefono": phone})
+                data = response.json()
                 
                 if response.status_code == 200:
-                    msg, color = "✅ ALERTA ENVIADA CON ÉXITO", ft.Colors.GREEN_700
+                    if data.get("status") == "already_active":
+                        msg, color = "ℹ️ La alarma ya está activa. Espera un momento.", ft.Colors.BLUE_700
+                        page.snack_bar = ft.SnackBar(ft.Text(msg), bgcolor=color)
+                        page.snack_bar.open = True
+                    else:
+                        # Éxito explícito con Diálogo
+                        success_dialog.open = True
+                        page.update()
+                else:
+                    msg, color = f"❌ Error API: {response.status_code}", ft.Colors.RED_700
+                    page.snack_bar = ft.SnackBar(ft.Text(msg), bgcolor=color)
+                    page.snack_bar.open = True
+        except Exception as e:
+            msg, color = f"🚨 Error de Red: {str(e)}", ft.Colors.RED_900
+            page.snack_bar = ft.SnackBar(ft.Text(msg), bgcolor=color)
+            page.snack_bar.open = True
+        
+        panic_button.disabled = False
+        panic_button.opacity = 1.0
+        page.update()
+
+    async def send_reset_alert(e):
+        page.snack_bar = ft.SnackBar(ft.Text("🔄 Rearmando sistema..."), bgcolor=ft.Colors.BLUE_GREY_800)
+        page.snack_bar.open = True
+        page.update()
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(f"{API_URL}/desactivar")
+                if response.status_code == 200:
+                    msg, color = "🔄 SISTEMA REARMADO CORRECTAMENTE", ft.Colors.BLUE_800
                 else:
                     msg, color = f"❌ Error API: {response.status_code}", ft.Colors.RED_700
         except Exception as e:
             msg, color = f"🚨 Error de Red: {str(e)}", ft.Colors.RED_900
-        
-        # Mostramos el mensaje usando un método más directo
-        page.snack_bar = ft.SnackBar(ft.Text(msg), bgcolor=color, duration=4000)
+
+        page.snack_bar = ft.SnackBar(ft.Text(msg), bgcolor=color)
         page.snack_bar.open = True
-        
-        panic_button.disabled = False
-        panic_button.opacity = 1.0
-        page.update() # Forzar refresco de toda la página
+        page.update()
 
     # --- COMPONENTES ---
     panic_button = ft.Container(
@@ -123,6 +162,12 @@ async def main(page: ft.Page):
             panic_button,
             ft.Divider(height=60, color=ft.Colors.TRANSPARENT),
             ft.Text(f"📞 {phone}", size=16, opacity=0.8),
+            ft.ElevatedButton(
+                "REARMAR SISTEMA", 
+                icon=ft.Icons.REFRESH, 
+                on_click=send_reset_alert,
+                style=ft.ButtonStyle(color=ft.Colors.BLUE_400)
+            ),
             ft.TextButton("Cambiar número", on_click=reset_config),
         )
         page.update()
